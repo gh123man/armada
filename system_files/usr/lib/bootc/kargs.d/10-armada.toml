@@ -19,5 +19,6 @@ kargs = [
 
     "cpufreq.default_governor=schedutil",
 
+    "ufshcd_core.uic_cmd_timeout=3000",
     "swiotlb=8192",
 ]

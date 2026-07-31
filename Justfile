@@ -84,14 +84,20 @@ build $target_image=image_name $tag=default_tag:
     BUILD_ARGS+=("--build-arg" "ARMADA_VERSION=${ARMADA_VERSION}")
 
     # Allow local armada-packages images to override pinned package images.
-    mapfile -t PKG_VARS < <(sed -n 's/^ARG \([A-Z0-9_]*_PKG\)=.*/\1/p' Containerfile)
-    declare -A KNOWN_PKG_VARS=()
-    for var in "${PKG_VARS[@]}"; do
-        KNOWN_PKG_VARS["${var}"]=1
-    done
+    PKG_VARS=()
+    while IFS= read -r var; do
+        PKG_VARS+=("${var}")
+    done < <(sed -n 's/^ARG \([A-Z0-9_]*_PKG\)=.*/\1/p' Containerfile)
     for p in ${ARMADA_LOCAL_PKGS:-}; do
         var="$(echo "$p" | tr '[:lower:]-' '[:upper:]_')_PKG"
-        if [[ -z "${KNOWN_PKG_VARS[$var]:-}" ]]; then
+        known=0
+        for known_var in "${PKG_VARS[@]}"; do
+            if [[ "${known_var}" == "${var}" ]]; then
+                known=1
+                break
+            fi
+        done
+        if [[ "${known}" != 1 ]]; then
             echo "unknown package in ARMADA_LOCAL_PKGS: ${p}" >&2
             exit 1
         fi
@@ -110,14 +116,12 @@ build $target_image=image_name $tag=default_tag:
     PULL_POLICY="newer"
     [[ "${LOCAL_PKG}" == 1 ]] && PULL_POLICY="missing"
 
-    SECRET_ARGS=()
     if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-        SECRET_ARGS+=("--secret" "id=GITHUB_TOKEN,env=GITHUB_TOKEN")
+        BUILD_ARGS+=("--secret" "id=GITHUB_TOKEN,env=GITHUB_TOKEN")
     fi
 
     podman build \
         "${BUILD_ARGS[@]}" \
-        "${SECRET_ARGS[@]}" \
         --platform linux/arm64 \
         --pull="${PULL_POLICY}" \
         --tag "${target_image}:${tag}" \

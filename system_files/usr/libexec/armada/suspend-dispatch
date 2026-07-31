@@ -1,17 +1,51 @@
 #!/bin/bash
-# Dispatch to fake-suspend or real suspend per ARMADA_SUSPEND_MODE.
+# Dispatch to fake-suspend or a validated real-suspend variant for this device.
 set -uo pipefail
 
-eval "$(/usr/libexec/armada/device-env 2>/dev/null)" || true
+device_env="${ARMADA_DEVICE_ENV_BIN:-/usr/libexec/armada/device-env}"
+fake_suspend="${ARMADA_FAKE_SUSPEND_BIN:-/usr/libexec/armada/fake-suspend}"
+mem_sleep_path="${ARMADA_MEM_SLEEP_PATH:-/sys/power/mem_sleep}"
+state_path="${ARMADA_POWER_STATE_PATH:-/sys/power/state}"
+
+eval "$("$device_env" 2>/dev/null)" || true
 mode="${ARMADA_SUSPEND_MODE:-fake}"
+mem_sleep_mode="${ARMADA_MEM_SLEEP_MODE:-}"
 
 if [[ "$mode" == "fake" ]]; then
-    exec /usr/libexec/armada/fake-suspend sleep
+    exec "$fake_suspend" sleep
+fi
+
+if [[ -n "$mem_sleep_mode" ]]; then
+    case "$mem_sleep_mode" in
+        s2idle|deep) ;;
+        *)
+            echo "suspend-dispatch: invalid mem-sleep mode: ${mem_sleep_mode}" >&2
+            exit 1
+            ;;
+    esac
+    if [[ "$mode" != "mem" ]]; then
+        echo "suspend-dispatch: ${mem_sleep_mode} requires ARMADA_SUSPEND_MODE=mem" >&2
+        exit 1
+    fi
+    if [[ ! -r "$mem_sleep_path" || ! -w "$mem_sleep_path" ]]; then
+        echo "suspend-dispatch: cannot select ${mem_sleep_mode} through ${mem_sleep_path}" >&2
+        exit 1
+    fi
+    if ! grep -qw -- "$mem_sleep_mode" "$mem_sleep_path"; then
+        echo "suspend-dispatch: ${mem_sleep_mode} is unavailable in ${mem_sleep_path}" >&2
+        exit 1
+    fi
+    printf '%s\n' "$mem_sleep_mode" >"$mem_sleep_path"
 fi
 
 # Real suspend: prefer systemd-sleep so its sleep hooks and process freeze run.
-for sleep_bin in /usr/lib/systemd/systemd-sleep /lib/systemd/systemd-sleep; do
+if [[ -n "${ARMADA_SYSTEMD_SLEEP_BIN:-}" ]]; then
+    sleep_bins=("$ARMADA_SYSTEMD_SLEEP_BIN")
+else
+    sleep_bins=(/usr/lib/systemd/systemd-sleep /lib/systemd/systemd-sleep)
+fi
+for sleep_bin in "${sleep_bins[@]}"; do
     [[ -x "$sleep_bin" ]] && exec "$sleep_bin" suspend "$@"
 done
 # No systemd-sleep found: write the state directly rather than leave sleep dead.
-echo "$mode" > /sys/power/state
+printf '%s\n' "$mode" >"$state_path"

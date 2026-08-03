@@ -181,6 +181,10 @@ Other devices use a "fake suspend" inspired by ROCKNIX: it blanks the screen and
 freezes the session, and the same press wakes it. Fake suspend does not truly
 sleep, so its idle battery drain is higher.
 
+The Retroid Pocket 6 charger-wake design and its relationship to Qualcomm's
+Android implementation are documented in
+[`docs/deep-sleep-charger-wake.md`](docs/deep-sleep-charger-wake.md).
+
 ## Updating
 
 > [!NOTE]

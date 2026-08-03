@@ -19,6 +19,7 @@ depmod -a "${KVER}" -b /
 # at its runtime path.
 mkdir -p /usr/lib/firmware
 cp -a /ctx/system_files/usr/lib/firmware/. /usr/lib/firmware/
+bash /ctx/build_files/ensure-rp6-firmware.sh
 
 echo "armada kernel ${KVER} installed at /usr/lib/modules/${KVER}/"
 ls -la "/usr/lib/modules/${KVER}/" | head -10

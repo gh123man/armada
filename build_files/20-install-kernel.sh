@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euxo pipefail
 
-KVER="7.0.11"
+KVER="7.1.5"
 TARBALL="/packages/kernel/armada-kernel-${KVER}.tar.zst"
 
 # bootc expects exactly one kernel under /usr/lib/modules.

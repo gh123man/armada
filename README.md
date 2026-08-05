@@ -176,10 +176,16 @@ desktop. The **Bazaar** app store and the **Armada Installer**
 
 ### Power button and sleep
 
-Pressing the power button does a "fake suspend" (inspired by ROCKNIX) rather than
-real S3 sleep: it blanks the screen and freezes the session, and the same press
-wakes it. Because the device does not truly sleep, idle battery drain is higher
-than it would be with real suspend.
+The Retroid Pocket 6 uses SM8550 low-power s2idle, which reaches the SoC's
+cluster sleep state while retaining the firmware wake contract. The AYN Odin 2
+family and AYN Thor use deep suspend-to-RAM.
+Other devices use a "fake suspend" inspired by ROCKNIX: it blanks the screen and
+freezes the session, and the same press wakes it. Fake suspend does not truly
+sleep, so its idle battery drain is higher.
+
+The Retroid Pocket 6 charger-wake design and its relationship to Qualcomm's
+Android implementation are documented in
+[`docs/deep-sleep-charger-wake.md`](docs/deep-sleep-charger-wake.md).
 
 ## Updating
 

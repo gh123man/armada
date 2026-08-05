@@ -1,0 +1,277 @@
+#!/bin/bash
+# Keep transport-only PMIC GLINK wakes inside the current suspend transaction.
+set -uo pipefail
+
+device_env="${ARMADA_DEVICE_ENV_BIN:-/usr/libexec/armada/device-env}"
+power_supply_root="${ARMADA_POWER_SUPPLY_ROOT:-/sys/class/power_supply}"
+pm_wakeup_irq_path="${ARMADA_PM_WAKEUP_IRQ_PATH:-/sys/power/pm_wakeup_irq}"
+interrupts_path="${ARMADA_INTERRUPTS_PATH:-/proc/interrupts}"
+wakeup_count_path="${ARMADA_WAKEUP_COUNT_PATH:-/sys/power/wakeup_count}"
+power_state_path="${ARMADA_POWER_STATE_PATH:-/sys/power/state}"
+suspend_bin="${ARMADA_WAKE_POLICY_SUSPEND_BIN:-}"
+run_dir="${ARMADA_WAKE_POLICY_RUN_DIR:-/run/armada-suspend-wake-policy}"
+charger_polls="${ARMADA_WAKE_POLICY_CHARGER_POLLS:-20}"
+charger_poll_interval="${ARMADA_WAKE_POLICY_CHARGER_POLL_INTERVAL:-0.1}"
+wakeup_count_timeout="${ARMADA_WAKE_POLICY_WAKEUP_COUNT_TIMEOUT:-5}"
+max_background_wakes="${ARMADA_WAKE_POLICY_MAX_BACKGROUND_WAKES:-0}"
+max_resuspend_retries="${ARMADA_WAKE_POLICY_MAX_RESUSPEND_RETRIES:-5}"
+resuspend_retry_interval="${ARMADA_WAKE_POLICY_RESUSPEND_RETRY_INTERVAL:-0.1}"
+log_bin="${ARMADA_WAKE_POLICY_LOG_BIN:-logger}"
+timeout_bin="${ARMADA_WAKE_POLICY_TIMEOUT_BIN:-timeout}"
+
+log() {
+    "$log_bin" -t armada-suspend-wake-policy -- "$*" 2>/dev/null || true
+}
+
+load_device_env() {
+    eval "$("$device_env" 2>/dev/null)" || true
+}
+
+policy_enabled() {
+    [[ "${ARMADA_SUSPEND_MODE:-fake}" == mem &&
+       "${ARMADA_WAKE_POLICY:-}" == pmic-glink ]]
+}
+
+external_power_online() {
+    local supply type online found=0
+
+    for supply in "$power_supply_root"/*; do
+        [[ -r "$supply/type" && -r "$supply/online" ]] || continue
+        read -r type <"$supply/type" || continue
+        case "$type" in
+            USB|USB_C|Mains) ;;
+            *) continue ;;
+        esac
+
+        found=1
+        read -r online <"$supply/online" || continue
+        [[ "$online" == 1 ]] && { printf '1\n'; return 0; }
+    done
+
+    (( found )) || return 1
+    printf '0\n'
+}
+
+wake_irq_number() {
+    local irq
+    [[ -r "$pm_wakeup_irq_path" ]] || return 1
+    read -r irq <"$pm_wakeup_irq_path" || return 1
+    [[ "$irq" =~ ^[0-9]+$ && "$irq" != 0 ]] || return 1
+    printf '%s\n' "$irq"
+}
+
+wake_irq_description() {
+    local irq=$1
+    [[ -r "$interrupts_path" ]] || return 1
+    awk -v irq="$irq" '$1 == irq ":" { print; found=1; exit } END { exit !found }' \
+        "$interrupts_path"
+}
+
+power_key_interrupt_count() {
+    [[ -r "$interrupts_path" ]] || return 1
+    awk '
+        /pmic_pwrkey|[Pp]ower [Bb]utton|pwrkey/ {
+            count = 0
+            for (i = 2; i <= NF; i++) {
+                if ($i !~ /^[0-9]+$/)
+                    break
+                count += $i
+            }
+            total += count
+            found = 1
+        }
+        END {
+            if (!found)
+                exit 1
+            print total
+        }
+    ' "$interrupts_path"
+}
+
+power_key_woke() {
+    local before now
+
+    [[ -r "$run_dir/power-key-interrupt-count" ]] || return 2
+    read -r before <"$run_dir/power-key-interrupt-count" || return 2
+    [[ "$before" =~ ^[0-9]+$ ]] || return 2
+    now="$(power_key_interrupt_count 2>/dev/null)" || return 2
+    [[ "$now" =~ ^[0-9]+$ && "$now" -ge "$before" ]] || return 2
+    (( now > before )) && return 0
+    return 1
+}
+
+charger_was_attached() {
+    local before now poll
+
+    [[ -r "$run_dir/external-power-online" ]] || return 2
+    read -r before <"$run_dir/external-power-online" || return 2
+    [[ "$before" == 0 || "$before" == 1 ]] || return 2
+
+    for ((poll = 0; poll <= charger_polls; poll++)); do
+        now="$(external_power_online 2>/dev/null)" || return 2
+        if [[ "$now" != "$before" ]]; then
+            printf '%s\n' "$now" >"$run_dir/external-power-online" || return 2
+            [[ "$before" == 0 && "$now" == 1 ]] && return 0
+            return 1
+        fi
+        # A connected supply needs no polling: only an unplug can change it,
+        # and unplug remains a background wake.  When disconnected, briefly
+        # poll because battmgr state can lag the GLINK IRQ for charger attach.
+        [[ "$before" == 1 ]] && return 1
+        (( poll == charger_polls )) || sleep "$charger_poll_interval"
+    done
+    return 1
+}
+
+classify_wake() {
+    local irq description charger_result power_key_result
+
+    power_key_woke
+    power_key_result=$?
+    if (( power_key_result == 0 )); then
+        printf 'power-key\n'
+        return
+    fi
+
+    irq="$(wake_irq_number)" || { printf 'missing-irq\n'; return; }
+    description="$(wake_irq_description "$irq")" || { printf 'unknown\n'; return; }
+
+    case "$description" in
+        *pmic_pwrkey*|*[Pp]ower\ [Bb]utton*|*pwrkey*)
+            printf 'power-key\n'
+            return
+            ;;
+        *glink-smem*|*ipcc_0*) ;;
+        *)
+            printf 'unknown\n'
+            return
+            ;;
+    esac
+
+    # IPCC is a shared transport and may have GLINK traffic queued after some
+    # other source initiated the wake. Refuse to suppress the resume unless the
+    # physical power-key counter was captured successfully.
+    (( power_key_result == 1 )) || { printf 'unknown\n'; return; }
+
+    charger_was_attached
+    charger_result=$?
+    case "$charger_result" in
+        0) printf 'charger-attach\n' ;;
+        1) printf 'background-glink\n' ;;
+        *) printf 'unknown\n' ;;
+    esac
+}
+
+snapshot_pre_suspend() {
+    local online power_key_count
+
+    mkdir -p "$run_dir" || return 0
+    online="$(external_power_online 2>/dev/null)" || online=unknown
+    printf '%s\n' "$online" >"$run_dir/external-power-online" || true
+    power_key_count="$(power_key_interrupt_count 2>/dev/null)" || power_key_count=unknown
+    printf '%s\n' "$power_key_count" >"$run_dir/power-key-interrupt-count" || true
+}
+
+read_stable_wakeup_count() {
+    local count
+
+    count="$("$timeout_bin" "$wakeup_count_timeout" cat "$wakeup_count_path" 2>/dev/null)" || return 1
+    [[ "$count" =~ ^[0-9]+$ ]] || return 1
+    printf '%s\n' "$count"
+}
+
+enter_deep_sleep() {
+    if [[ -n "$suspend_bin" ]]; then
+        "$suspend_bin"
+    else
+        printf 'mem\n' >"$power_state_path" 2>/dev/null
+    fi
+}
+
+filter_post_suspend_wakes() {
+    local reason count cycles=0 resuspend_failures=0
+
+    [[ -r "$run_dir/external-power-online" ]] || {
+        log "missing pre-suspend power snapshot; resuming"
+        return 0
+    }
+    [[ -e "$pm_wakeup_irq_path" ]] || {
+        log "pm_wakeup_irq unavailable (kernel needs CONFIG_PM_SLEEP_DEBUG); resuming"
+        return 0
+    }
+    trap 'rm -f -- "$run_dir/external-power-online" "$run_dir/power-key-interrupt-count"' RETURN
+
+    while :; do
+        reason="$(classify_wake)"
+        case "$reason" in
+            charger-attach|power-key|unknown|missing-irq)
+                log "resume accepted: $reason"
+                return 0
+                ;;
+            background-glink)
+                if (( max_background_wakes > 0 && cycles >= max_background_wakes )); then
+                    log "background wake safety limit reached; resuming"
+                    return 0
+                fi
+                while :; do
+                    if count="$(read_stable_wakeup_count)" &&
+                       printf '%s\n' "$count" >"$wakeup_count_path" 2>/dev/null; then
+                        log "background GLINK wake; returning to deep sleep"
+                        if enter_deep_sleep; then
+                            cycles=$((cycles + 1))
+                            resuspend_failures=0
+                            break
+                        fi
+                    fi
+
+                    # A wake arriving between wakeup_count and power/state makes
+                    # the kernel reject suspend with -EBUSY.  Keep this inside
+                    # the already-classified background transaction, but check
+                    # intentional wake signals before retrying.  pm_wakeup_irq
+                    # may legitimately be empty when the abort happened before
+                    # an IRQ was recorded.
+                    resuspend_failures=$((resuspend_failures + 1))
+                    reason="$(classify_wake)"
+                    case "$reason" in
+                        charger-attach|power-key|unknown)
+                            log "resume accepted during resuspend: $reason"
+                            return 0
+                            ;;
+                        background-glink|missing-irq) ;;
+                    esac
+
+                    if (( max_resuspend_retries > 0 &&
+                          resuspend_failures >= max_resuspend_retries )); then
+                        log "resuspend retry safety limit reached; resuming"
+                        return 0
+                    fi
+                    log "resuspend raced a wake event; retrying ($resuspend_failures/$max_resuspend_retries)"
+                    sleep "$resuspend_retry_interval"
+                done
+                ;;
+        esac
+    done
+}
+
+load_device_env
+
+case "${1:-}" in
+    classify)
+        policy_enabled || { printf 'disabled\n'; exit 0; }
+        classify_wake
+        ;;
+    pre)
+        [[ "${2:-}" == suspend ]] || exit 0
+        policy_enabled || exit 0
+        snapshot_pre_suspend
+        ;;
+    post)
+        [[ "${2:-}" == suspend ]] || exit 0
+        policy_enabled || exit 0
+        filter_post_suspend_wakes
+        ;;
+    *)
+        echo "Usage: $0 {pre|post} suspend" >&2
+        exit 2
+        ;;
+esac

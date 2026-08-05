@@ -1,5 +1,5 @@
 [Unit]
-Description=Armada splash (early boot framebuffer)
+Description=Armada splash (early boot)
 # No Conflicts=display-manager.service: that deletes sddm's start job from
 # the boot transaction; the sddm drop-in stops this unit instead.
 DefaultDependencies=no

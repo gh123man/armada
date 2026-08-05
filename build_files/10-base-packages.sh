@@ -30,11 +30,13 @@ dnf5 -y install --setopt=install_weak_deps=False \
     sudo \
     rsync \
     curl \
+    git \
     jq \
     htop \
     lsof \
     scx-scheds \
     unzip \
+    fuse \
     evtest \
     dbus-x11 \
     xdg-user-dirs \

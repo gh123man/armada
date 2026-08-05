@@ -17,6 +17,7 @@ dracut \
     --kver "${KVER}" \
     --add ostree \
     --add armada-splash \
+    --add armada-ostree-fallback \
     "${IMG}" "${KVER}"
 
 # dracut drops modules silently: fail the build rather than ship without.
@@ -29,6 +30,8 @@ for required in \
     usr/libexec/armada/armada-splash-launcher \
     usr/libexec/armada/device-env \
     usr/share/armada/splash/splash.asp \
+    usr/libexec/armada/armada-ostree-fallback \
+    usr/lib/systemd/system/ostree-prepare-root.service.d/armada-fallback.conf \
     usr/lib/ostree/ostree-prepare-root; do
     if ! awk -v p="${required}" '$NF == p { found=1 } END { exit !found }' <<<"${contents}"; then
         echo "ERROR: ${required} missing from initramfs"

@@ -6,6 +6,28 @@ ARMADA_BOOTIMG_ARGS="--base 0x10000000 --pagesize 2048 --kernel_offset 0x0000800
 # cap at the first field until that's confirmed on-device.
 ARMADA_CMDLINE_MAX=512
 
+# BLS options line to /KERNEL cmdline, shared so build and on-device regen cannot
+# drift. ostree= leads so a truncated header loses tuning kargs, not the root
+# pointer; returns 1 without it, since that /KERNEL could never reach the rootfs.
+armada_bootimg_cmdline() {
+    local t ostree_arg="" rest="" rflags=""
+    # Unquoted word splitting also globs; 'local -' scopes the noglob to here.
+    local -
+    set -f
+    for t in $1; do
+        case "${t}" in
+            console=ttyS0) continue ;;
+            ostree=*) ostree_arg="${t}" ;;
+            rootflags=*) rflags="${rflags:+${rflags},}${t#rootflags=}" ;;
+            *) rest="${rest} ${t}" ;;
+        esac
+    done
+    [ -n "${ostree_arg}" ] || return 1
+    rflags="${rflags//,space_cache=v2/}"
+    [ -n "${rflags}" ] && rest="${rest} rootflags=${rflags}"
+    printf '%s%s' "${ostree_arg}" "${rest}"
+}
+
 # Path-free digest of the real boot files (kernel initrd dtb...): ostree
 # paths miss in-place regeneration, and deployed mtimes are epoch-zero.
 armada_bootimg_content_id() {

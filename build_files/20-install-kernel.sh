@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euxo pipefail
 
-KVER="7.0.11"
+KVER="7.1.5"
 TARBALL="/packages/kernel/armada-kernel-${KVER}.tar.zst"
 
 # bootc expects exactly one kernel under /usr/lib/modules.
@@ -19,6 +19,7 @@ depmod -a "${KVER}" -b /
 # at its runtime path.
 mkdir -p /usr/lib/firmware
 cp -a /ctx/system_files/usr/lib/firmware/. /usr/lib/firmware/
+bash /ctx/build_files/ensure-rp6-firmware.sh
 
 echo "armada kernel ${KVER} installed at /usr/lib/modules/${KVER}/"
 ls -la "/usr/lib/modules/${KVER}/" | head -10

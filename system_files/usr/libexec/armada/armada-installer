@@ -443,9 +443,11 @@ copy_current_bootc_deployment() {
 }
 
 seed_kernel() {
-    # armada-bootimg-sync only regenerates /KERNEL at shutdown; seed the first one.
-    ESP="$TARGET/boot/efi" BOOTROOT="$TARGET/boot" \
-        /usr/libexec/armada/armada-bootimg-update
+    # SYSROOT must be the target: the ostree= karg comes from the target's BLS
+    # entry and only resolves against the filesystem that generated it.
+    ESP="$TARGET/boot/efi" BOOTROOT="$TARGET/boot" SYSROOT="$TARGET" \
+        /usr/libexec/armada/armada-bootimg-update ||
+        { echo "ERROR: no /KERNEL written; the internal install is complete but not bootable" >&2; exit 1; }
 }
 
 write_fstab() {

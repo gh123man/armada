@@ -46,16 +46,7 @@ for _name in ${SUPPORTED_DTBS}; do
 done
 CONTENT_ID=$(sudo bash -c "source '${ARMADA_LIB}/bootimg-args'; armada_bootimg_content_id '${KPATH}' '${IPATH}' ${_DTB_ARGS}")
 STAMP_ID=$(armada_bootimg_id "${LINUX_LINE}" "${INITRD_LINE}" "${OPTIONS_LINE}" "${DTB_LIST}" "${ARMADA_LIB}/bootimg-args" "${CONTENT_ID}")
-CMDLINE="${OPTIONS_LINE}"
-
-# Fit the 512-byte cmdline: drop serial console, ostree= first, keep splash kargs.
-_drop=" console=ttyS0 "
-_ostree=""; _rest=""
-for _t in ${CMDLINE}; do
-    case "${_drop}" in *" ${_t} "*) continue ;; esac
-    case "${_t}" in ostree=*) _ostree="${_t}" ;; *) _rest="${_rest} ${_t}" ;; esac
-done
-CMDLINE="${_ostree}${_rest}"
+CMDLINE=$(armada_bootimg_cmdline "${OPTIONS_LINE}") || { echo "ERROR: no ostree= karg in ${BLS}"; exit 1; }
 
 if [[ "${#CMDLINE}" -gt "${ARMADA_CMDLINE_MAX}" ]]; then
     echo "ERROR: cmdline is ${#CMDLINE}B, over the ${ARMADA_CMDLINE_MAX}B boot-header limit"; exit 1

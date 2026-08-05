@@ -176,7 +176,9 @@ desktop. The **Bazaar** app store and the **Armada Installer**
 
 ### Power button and sleep
 
-The Retroid Pocket 6, AYN Odin 2 family, and AYN Thor use deep suspend-to-RAM.
+The Retroid Pocket 6 uses SM8550 low-power s2idle, which reaches the SoC's
+cluster sleep state while retaining the firmware wake contract. The AYN Odin 2
+family and AYN Thor use deep suspend-to-RAM.
 Other devices use a "fake suspend" inspired by ROCKNIX: it blanks the screen and
 freezes the session, and the same press wakes it. Fake suspend does not truly
 sleep, so its idle battery drain is higher.

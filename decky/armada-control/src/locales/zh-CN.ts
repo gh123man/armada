@@ -1,6 +1,14 @@
 import type { TranslationKey } from "./en";
 
 export const zhCN = {
+  // English placeholders until these labels receive a reviewed translation.
+  "touchscreen.title": "Touchscreen",
+  "touchscreen.mode": "Mode",
+  "touchscreen.useDefault": "Use Default ({mode})",
+  "touchscreen.direct": "Direct touch",
+  "touchscreen.trackpad": "Trackpad",
+  "touchscreen.sensitivity": "Pointer sensitivity (%)",
+  "touchscreen.tapToClick": "Tap to click",
   "common.loading": "正在加载",
   "common.default": "默认",
   "common.native": "原生",
@@ -56,7 +64,10 @@ export const zhCN = {
   "settings.ablVersion": "ABL 版本",
   "common.unknown": "未知",
   "settings.experimental": "实验性功能",
+  "settings.diagnostics": "诊断",
   "settings.sleepMode": "休眠模式",
+  "settings.sleepLogs": "启用休眠日志",
+  "settings.sleepLogsError": "无法更新休眠日志设置",
   "settings.bottomScreen": "下屏",
   "settings.bottomScreenDescription": "在第二块屏幕上运行 Plasma 移动版",
   "settings.bottomScreenBrightness": "下屏亮度",

@@ -1,6 +1,14 @@
 import type { TranslationKey } from "./en";
 
 export const ptPT = {
+  // English placeholders until these labels receive a reviewed translation.
+  "touchscreen.title": "Touchscreen",
+  "touchscreen.mode": "Mode",
+  "touchscreen.useDefault": "Use Default ({mode})",
+  "touchscreen.direct": "Direct touch",
+  "touchscreen.trackpad": "Trackpad",
+  "touchscreen.sensitivity": "Pointer sensitivity (%)",
+  "touchscreen.tapToClick": "Tap to click",
   "common.loading": "A carregar",
   "common.default": "Predefinição",
   "common.native": "Nativo",
@@ -56,7 +64,10 @@ export const ptPT = {
   "settings.ablVersion": "Versão do ABL",
   "common.unknown": "desconhecido",
   "settings.experimental": "Experimental",
+  "settings.diagnostics": "Diagnósticos",
   "settings.sleepMode": "Modo de suspensão",
+  "settings.sleepLogs": "Ativar registos de suspensão",
+  "settings.sleepLogsError": "Não foi possível atualizar os registos de suspensão",
   "settings.bottomScreen": "Ecrã inferior",
   "settings.bottomScreenDescription": "Inicia o Plasma Mobile no ecrã inferior",
   "settings.bottomScreenBrightness": "Brilho do ecrã inferior",

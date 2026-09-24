@@ -141,7 +141,11 @@ factory_global = factory_tweaks["global"]
 check("factory declares every displayed default", set(factory_global) == {
     "cores", "fexProfile", "gamescopeCores", "gamescopeNice",
     "gamescopeVulkanRealtime", "nice", "scheduler", "thunks", "wineTopology",
+    "touchscreenMode", "touchscreenSensitivity", "touchscreenTapToClick",
 })
+check("factory touchscreen defaults loaded",
+      factory_global["touchscreenMode"] == "direct" and factory_global["touchscreenSensitivity"] == 1.0 and
+      factory_global["touchscreenTapToClick"] is True)
 check("factory FEX profile loaded", factory_global["fexProfile"] == "default")
 check("factory core masks are unset",
       factory_global["cores"] is None and factory_global["gamescopeCores"] is None)
@@ -711,7 +715,7 @@ plugin_power.FACTORY_POWER_CONFIG = plugin_power.Path(factory)
 plugin_power.POWER_CONFIG = plugin_power.Path(os.path.join(WORK, "etc-armada-power.conf"))
 data = plugin_power.parse_power()
 factory_data = plugin_power.parse_power(plugin_power.FACTORY_POWER_CONFIG)
-check("governor exposed in parse", data["profiles"]["eco"]["cpu_governor"] == "schedutil")
+check("governor exposed in parse", data["profiles"]["eco"]["cpu_governor"] == "conservative")
 
 # untouched config renders no /etc profile sections (factory keeps tracking /usr)
 rendered = plugin_power.render_power(data, factory_data)
